@@ -3,8 +3,8 @@ package worker
 import (
 	"context"
 	"fmt"
-	"mock_go/internal/rabbit"
-	"mock_go/internal/redis"
+	"mockgo/internal/rabbit"
+	"mockgo/internal/redis"
 )
 
 // Реализация функции, которая берет данные из RabbitMQ и Redis и сравнивает их
