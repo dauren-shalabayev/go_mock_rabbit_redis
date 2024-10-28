@@ -74,12 +74,6 @@ type Cache struct {
 	Subscribers map[string]string
 }
 
-type CheckNumberResponse struct {
-	Found      bool       `json:"found"`
-	CacheValue CacheValue `json:"cache_value,omitempty"` // omitempty исключит поле, если оно пустое
-	Message    string     `json:"message,omitempty"`     // Сообщение о статусе
-}
-
 func CacheData(taskID string, r *RedisClientImpl) error {
 
 	newRes := make(map[string]CacheValue)
@@ -140,7 +134,7 @@ func GetPreviousResult(key int, r *RedisClientImpl) (map[string]CacheValue, erro
 	return prevRes, nil
 }
 
-func CheckNumber(r *RedisClientImpl, msisdn string) (CheckNumberResponse, error) {
+func CheckNumber(r *RedisClientImpl, msisdn string) (CacheValue, error) {
 	ctx := context.Background() // Создаем контекст
 	var cursor uint64
 	numberPattern := regexp.MustCompile(`^\d+$`) // Регулярное выражение для поиска ключей, содержащих только числа
@@ -148,7 +142,7 @@ func CheckNumber(r *RedisClientImpl, msisdn string) (CheckNumberResponse, error)
 	for {
 		keys, newCursor, err := r.client.Scan(ctx, cursor, "*", 100).Result() // Используем "100" для ограничения числа возвращаемых ключей
 		if err != nil {
-			return CheckNumberResponse{}, fmt.Errorf("ошибка при сканировании ключей: %v", err)
+			return CacheValue{}, fmt.Errorf("ошибка при сканировании ключей: %v", err)
 		}
 
 		for _, key := range keys {
@@ -167,11 +161,7 @@ func CheckNumber(r *RedisClientImpl, msisdn string) (CheckNumberResponse, error)
 
 				if val, ok := cacheData[msisdn]; ok {
 					fmt.Printf("Телефонный номер найден в кеше: %s, значение: %+v\n", key, val)
-					return CheckNumberResponse{
-						Found:      true,
-						CacheValue: val,
-						Message:    "Телефонный номер найден",
-					}, nil // Возвращаем найденное значение
+					return val, nil // Возвращаем найденное значение
 				}
 			}
 		}
@@ -183,8 +173,5 @@ func CheckNumber(r *RedisClientImpl, msisdn string) (CheckNumberResponse, error)
 		}
 	}
 
-	return CheckNumberResponse{
-		Found:   false,
-		Message: fmt.Sprintf("Телефонный номер %s не найден", msisdn),
-	}, nil // Возвращаем сообщение о том, что номер не найден
+	return CacheValue{}, nil // Возвращаем сообщение о том, что номер не найден
 }

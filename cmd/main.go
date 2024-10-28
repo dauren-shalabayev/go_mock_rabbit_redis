@@ -1,17 +1,17 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"mockgo/internal/rabbit"
 	"mockgo/internal/redis"
+	"net/http"
+	"time"
 )
-
-// Реализация клиента Redis
 
 // Основная функция
 func main() {
 	rabbitHost := "amqp://guest:guest@localhost:5672/"
-	redisHost := "localhost:6379"
 
 	rabbitClient, err := rabbit.NewRabbitMQ(rabbitHost)
 	if err != nil {
@@ -19,23 +19,83 @@ func main() {
 		return
 	}
 	defer rabbitClient.Close()
-	type CacheValue struct {
-		Imsi     string
-		LacCell  string
-		SectorID int
+
+	StartHTTPServer()
+
+	select {}
+}
+
+// Запуск HTTP-сервера
+func StartHTTPServer() {
+	httpServer := &http.Server{
+		Addr:        ":8051",
+		ReadTimeout: 120 * time.Second,
 	}
+
+	http.HandleFunc("/api/v1/task/", checkTaskHandler)
+	http.HandleFunc("/api/v1/check_phone/", checkMsisdnHandler)
+
+	go func() {
+		if err := httpServer.ListenAndServe(); err != nil {
+			fmt.Println("Ошибка при запуске сервера:", err)
+		}
+	}()
+}
+
+func checkTaskHandler(w http.ResponseWriter, r *http.Request) {
+	fmt.Print("Check request to start new task")
+	w.Write([]byte("Success"))
+}
+
+// Структуры ответа
+type CacheValue struct {
+	Imsi     string `json:"imsi"`
+	LacCell  string `json:"lac_cell"`
+	SectorID int    `json:"sector_id"`
+}
+
+type CheckNumberResponse struct {
+	Msisdn     string      `json:"msisdn"`
+	Found      bool        `json:"found"`
+	CacheValue *CacheValue `json:"cache_value,omitempty"`
+}
+
+// Обработчик checkMsisdnHandler
+func checkMsisdnHandler(w http.ResponseWriter, r *http.Request) {
+	msisdn := r.URL.Query().Get("msisdn")
+	fmt.Println("Получен msisdn:", msisdn)
+	if msisdn == "" {
+		http.Error(w, "Phone number is required", http.StatusBadRequest)
+		return
+	}
+
+	redisHost := "localhost:6379"
 	redisClient := redis.NewRedis(redisHost)
+	msisdnData, err := redis.CheckNumber(redisClient, msisdn)
+	if err != nil {
+		http.Error(w, "Ошибка при проверке номера", http.StatusInternalServerError)
+		fmt.Println("Ошибка:", err)
+		return
+	}
 
-	// Call CacheData function
-	//redis.CacheData("1111", redisClient)
-	//redis.CacheData2("1112", redisClient)
+	isFound := msisdnData != (redis.CacheValue{}) // Проверка на нулевое значение
+	response := CheckNumberResponse{
+		Msisdn: msisdn,
+		Found:  isFound,
+	}
 
-	redis.CheckNumber(redisClient, "77014151777")
-	// Вызов CompareData с параметрами
-	// result, err := worker.CompareData(rabbitClient, redisClient, "abons_log", "name")
-	// if err != nil {
-	// 	fmt.Printf("Ошибка: %v\n", err)
-	// } else {
-	// 	fmt.Printf("Результат сравнения: %v\n", result)
-	// }
+	// Если данные найдены, заполняем CacheValue
+	if isFound {
+		response.CacheValue = &CacheValue{
+			Imsi:     msisdnData.Imsi,
+			LacCell:  msisdnData.LacCell,
+			SectorID: msisdnData.SectorID,
+		}
+	}
+
+	// Отправка ответа
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Ошибка при формировании ответа", http.StatusInternalServerError)
+	}
 }
