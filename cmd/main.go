@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"mockgo/internal/rabbit"
 	"mockgo/internal/redis"
-	"mockgo/internal/worker"
 )
 
 // Реализация клиента Redis
@@ -20,14 +19,23 @@ func main() {
 		return
 	}
 	defer rabbitClient.Close()
-
+	type CacheValue struct {
+		Imsi     string
+		LacCell  string
+		SectorID int
+	}
 	redisClient := redis.NewRedis(redisHost)
 
+	// Call CacheData function
+	//redis.CacheData("1111", redisClient)
+	//redis.CacheData2("1112", redisClient)
+
+	redis.CheckNumber(redisClient)
 	// Вызов CompareData с параметрами
-	result, err := worker.CompareData(rabbitClient, redisClient, "abons_log", "name")
-	if err != nil {
-		fmt.Printf("Ошибка: %v\n", err)
-	} else {
-		fmt.Printf("Результат сравнения: %v\n", result)
-	}
+	// result, err := worker.CompareData(rabbitClient, redisClient, "abons_log", "name")
+	// if err != nil {
+	// 	fmt.Printf("Ошибка: %v\n", err)
+	// } else {
+	// 	fmt.Printf("Результат сравнения: %v\n", result)
+	// }
 }
