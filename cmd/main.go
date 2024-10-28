@@ -30,7 +30,7 @@ func main() {
 	//redis.CacheData("1111", redisClient)
 	//redis.CacheData2("1112", redisClient)
 
-	redis.CheckNumber(redisClient)
+	redis.CheckNumber(redisClient, "77014151777")
 	// Вызов CompareData с параметрами
 	// result, err := worker.CompareData(rabbitClient, redisClient, "abons_log", "name")
 	// if err != nil {

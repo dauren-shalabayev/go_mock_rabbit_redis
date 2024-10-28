@@ -74,13 +74,19 @@ type Cache struct {
 	Subscribers map[string]string
 }
 
+type CheckNumberResponse struct {
+	Found      bool       `json:"found"`
+	CacheValue CacheValue `json:"cache_value,omitempty"` // omitempty исключит поле, если оно пустое
+	Message    string     `json:"message,omitempty"`     // Сообщение о статусе
+}
+
 func CacheData(taskID string, r *RedisClientImpl) error {
 
 	newRes := make(map[string]CacheValue)
 	newRes["77052395560"] = CacheValue{
-		Imsi:     "sadasd",
-		LacCell:  "sadsadad",
-		SectorID: 11111,
+		Imsi:     "77052395560900",
+		LacCell:  "100-300",
+		SectorID: 1020,
 	}
 	b, err := json.Marshal(newRes)
 	if err != nil {
@@ -97,9 +103,9 @@ func CacheData2(taskID string, r *RedisClientImpl) error {
 
 	newRes := make(map[string]CacheValue)
 	newRes["77014151777"] = CacheValue{
-		Imsi:     "sadasd",
-		LacCell:  "sadsadad",
-		SectorID: 11111,
+		Imsi:     "77014151777999",
+		LacCell:  "100-200",
+		SectorID: 1021,
 	}
 	b, err := json.Marshal(newRes)
 	if err != nil {
@@ -134,39 +140,39 @@ func GetPreviousResult(key int, r *RedisClientImpl) (map[string]CacheValue, erro
 	return prevRes, nil
 }
 
-func CheckNumber(r *RedisClientImpl) {
+func CheckNumber(r *RedisClientImpl, msisdn string) (CheckNumberResponse, error) {
 	ctx := context.Background() // Создаем контекст
 	var cursor uint64
 	numberPattern := regexp.MustCompile(`^\d+$`) // Регулярное выражение для поиска ключей, содержащих только числа
-	msisdn := "77014151777"
-	for {
 
+	for {
 		keys, newCursor, err := r.client.Scan(ctx, cursor, "*", 100).Result() // Используем "100" для ограничения числа возвращаемых ключей
 		if err != nil {
-			panic(err)
+			return CheckNumberResponse{}, fmt.Errorf("ошибка при сканировании ключей: %v", err)
 		}
 
 		for _, key := range keys {
-
 			if numberPattern.MatchString(key) { // Проверяем, соответствует ли ключ шаблону
-				fmt.Println("key:", key)
 				workerKey, err := strconv.Atoi(key)
-				fmt.Println(workerKey)
+				if err != nil {
+					fmt.Println("Ошибка при преобразовании ключа в формат int:", err)
+					continue // Переход к следующему ключу
+				}
+
 				cacheData, err := GetPreviousResult(workerKey, r)
 				if err != nil {
-					fmt.Print("Error retrieving cache data")
-
-					return
+					fmt.Println("Ошибка при получении данных из кеша:", err)
+					continue // Переход к следующему ключу
 				}
-
-				fmt.Println(cacheData)
 
 				if val, ok := cacheData[msisdn]; ok {
-					fmt.Print("Phone number found in cache")
-					fmt.Print(val)
-					return
+					fmt.Printf("Телефонный номер найден в кеше: %s, значение: %+v\n", key, val)
+					return CheckNumberResponse{
+						Found:      true,
+						CacheValue: val,
+						Message:    "Телефонный номер найден",
+					}, nil // Возвращаем найденное значение
 				}
-
 			}
 		}
 
@@ -176,4 +182,9 @@ func CheckNumber(r *RedisClientImpl) {
 			break
 		}
 	}
+
+	return CheckNumberResponse{
+		Found:   false,
+		Message: fmt.Sprintf("Телефонный номер %s не найден", msisdn),
+	}, nil // Возвращаем сообщение о том, что номер не найден
 }
