@@ -21,8 +21,7 @@ func main() {
 	defer rabbitClient.Close()
 
 	StartHTTPServer()
-
-	select {}
+	fmt.Println("hello")
 }
 
 // Запуск HTTP-сервера
