@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
+	"io/ioutil"
 	"log"
 	"mockgo/internal/rabbit"
 	"mockgo/internal/redis"
@@ -32,7 +32,8 @@ func main() {
 	ctx := context.Background()
 	b, err := redisClient.Get(ctx, cacheKey)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Println("Ошибка при получении данных из Redis:", err)
+		return
 	}
 
 	var cacheData struct {
@@ -40,27 +41,49 @@ func main() {
 		WhiteList  []string       `json:"white_list"`
 		Locations  map[string]int `json:"locations"`
 	}
-	fmt.Println("cachedata", cacheData)
-
-	fmt.Println(b)
+	if err := json.Unmarshal([]byte(b), &cacheData); err != nil {
+		fmt.Println("Ошибка при разборе данных из Redis:", err)
+		return
+	}
+	fmt.Println("Текущий кэш:", cacheData)
 
 	data, err := fetchData()
 	if err != nil {
 		log.Println("Ошибка при получении данных:", err)
-
+		return
 	}
 	fmt.Println("response", data)
+
+	fmt.Println("response data:", string(data))
 
 	var response struct {
 		Msisdns []string `json:"msisdns"`
 	}
-
 	if err := json.Unmarshal(data, &response); err != nil {
 		log.Println("Ошибка при разборе JSON:", err)
-
+		return
 	}
 
-	fmt.Println(response)
+	fmt.Println("parsed response:", response)
+
+	// Заменяем старые номера в white_list новыми из response.Msisdns
+	cacheData.WhiteList = response.Msisdns
+
+	// Сериализуем структуру в JSON
+	updatedData, err := json.Marshal(cacheData)
+	if err != nil {
+		fmt.Println("Ошибка при сериализации обновленных данных:", err)
+		return
+	}
+
+	// Перезаливаем обновленные данные обратно в Redis
+	if val, err := redisClient.Set(ctx, cacheKey, updatedData); err != nil {
+		fmt.Println(val)
+		fmt.Println("Ошибка при перезаливке данных в Redis:", err)
+		return
+	}
+
+	fmt.Println("Данные успешно обновлены и перезалиты в Redis!")
 	select {}
 }
 
@@ -71,8 +94,6 @@ func StartHTTPServer() {
 		ReadTimeout: 120 * time.Second,
 	}
 
-	http.HandleFunc("/api/v1/task/", checkTaskHandler)
-	http.HandleFunc("/api/v1/check_phone/", checkMsisdnHandler)
 	http.HandleFunc("/api/v1/getwhitelist", getWhiteListHandler)
 
 	go func() {
@@ -80,11 +101,6 @@ func StartHTTPServer() {
 			fmt.Println("Ошибка при запуске сервера:", err)
 		}
 	}()
-}
-
-func checkTaskHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Print("Check request to start new task")
-	w.Write([]byte("Success"))
 }
 
 type Response struct {
@@ -167,12 +183,20 @@ func checkMsisdnHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func fetchData() ([]byte, error) {
-	// Здесь укажи реальный URL вместо заглушки
-	resp, err := http.Get("http://localhost:8051/api/v1/mockresponse")
+	resp, err := http.Get("http://localhost:8051/api/v1/getwhitelist") // пример
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("ошибка при запросе данных: %v", err)
 	}
 	defer resp.Body.Close()
 
-	return io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("неудачный ответ от сервера: %s", resp.Status)
+	}
+
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка при чтении ответа: %v", err)
+	}
+
+	return data, nil
 }
